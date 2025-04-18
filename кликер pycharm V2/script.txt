@@ -1,0 +1,400 @@
+import pygame
+import sys
+import math
+from pygame.locals import *
+
+# Инициализация Pygame и микшера
+pygame.init()
+pygame.mixer.init()
+
+# Настройки окна
+WIDTH, HEIGHT = 800, 600
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Кликер с улучшениями")
+
+# Цвета
+WHITE = (255, 255, 255)
+GREEN = (0, 255, 0)
+RED = (255, 0, 0)
+BLUE = (0, 0, 255)
+GRAY = (200, 200, 200)
+BLACK = (0, 0, 0)
+DARK_GRAY = (100, 100, 100)
+PURPLE = (128, 0, 128)
+LIGHT_PURPLE = (200, 150, 200)
+ORANGE = (255, 165, 0)
+YELLOW = (255, 255, 0)
+
+# Звуки
+try:
+    click_sound = pygame.mixer.Sound("click.wav")
+    upgrade_sound = pygame.mixer.Sound("powerup.wav")
+    achievement_sound = pygame.mixer.Sound("achievement.wav")  # Звук для разблокировки достижений
+    pygame.mixer.music.load("background_music.mp3")
+except:
+    print("Ошибка загрузки звуков! Убедитесь, что файлы есть в папке с игрой")
+    click_sound = pygame.mixer.Sound(buffer=bytearray(100))
+    upgrade_sound = pygame.mixer.Sound(buffer=bytearray(100))
+    achievement_sound = pygame.mixer.Sound(buffer=bytearray(100))
+
+# Настройки звука
+music_volume = 0.5
+sound_volume = 0.7
+pygame.mixer.music.set_volume(music_volume)
+click_sound.set_volume(sound_volume)
+upgrade_sound.set_volume(sound_volume)
+achievement_sound.set_volume(sound_volume)
+pygame.mixer.music.play(-1)
+
+# Игровые переменные
+score = 0
+click_power = 1
+auto_click = 0
+upgrades_open = False
+settings_open = False
+achievements_open = False
+upgrades_menu_x = WIDTH
+settings_menu_x = -300
+achievements_menu_x = WIDTH
+
+# Анимация
+menu_speed = 25
+upgrades_menu_width = 350
+settings_menu_width = 300
+
+# Шрифты
+font = pygame.font.Font(None, 36)
+small_font = pygame.font.Font(None, 24)
+
+# Улучшения
+upgrades = [
+    {"name": "+1 за клик", "cost": 10, "power": 1},
+    {"name": "+5 за клик", "cost": 50, "power": 5},
+    {"name": "Авто-кликер (1/сек)", "cost": 200, "power": 0, "auto": 1},
+    {"name": "Мега клик (+10)", "cost": 500, "power": 10},
+    {"name": "Супер авто-кликер (5/сек)", "cost": 1000, "power": 0, "auto": 5},
+]
+
+# Достижения
+achievements = [
+    {"name": "Новичок", "description": "Достигните 10 очков", "goal": 10, "unlocked": False},
+    {"name": "Опытный игрок", "description": "Достигните 100 очков", "goal": 100, "unlocked": False},
+    {"name": "Профессионал", "description": "Достигните 1000 очков", "goal": 1000, "unlocked": False},
+    {"name": "Бог кликов", "description": "Достигните 10000 очков", "goal": 10000, "unlocked": False},
+    {"name": "Первое улучшение", "description": "Купите первое улучшение", "goal": 1, "unlocked": False},
+    {"name": "Автоматизация", "description": "Активируйте автокликер", "goal": 1, "unlocked": False},
+    {"name": "Марафон", "description": "Играйте 10 минут подряд", "goal": 600, "unlocked": False},  # Время в секундах
+    {"name": "Покупатель", "description": "Купите 5 улучшений", "goal": 5, "unlocked": False},
+]
+
+# Система уведомлений
+notifications = []  # Список уведомлений
+notification_duration = 3000  # Время отображения уведомления в миллисекундах
+
+# Прокрутка достижений
+achievement_scroll_offset = 0
+max_scroll_offset = max(0, len(achievements) * 90 - HEIGHT + 100)
+
+# Счетчик кликов в секунду (CPS)
+last_click_time = 0
+click_count = 0
+cps = 0
+
+
+def draw_gear(surface, x, y, size, color, rotation=0):
+    points = []
+    for i in range(12):
+        angle = math.radians(rotation + i * 30)
+        radius = size if i % 2 == 0 else size * 0.6
+        points.append((x + radius * math.cos(angle), y + radius * math.sin(angle)))
+    pygame.draw.polygon(surface, color, points)
+    pygame.draw.circle(surface, color, (x, y), size * 0.4)
+
+
+def draw_settings_menu(x_pos):
+    pygame.draw.rect(screen, GRAY, (x_pos, 50, settings_menu_width, 250))
+    pygame.draw.rect(screen, BLACK, (x_pos, 50, settings_menu_width, 250), 2)
+
+    title = font.render("Настройки", True, BLACK)
+    screen.blit(title, (x_pos + 100, 60))
+
+    # Музыка
+    music_text = small_font.render("Музыка:", True, BLACK)
+    screen.blit(music_text, (x_pos + 20, 100))
+    pygame.draw.rect(screen, BLACK, (x_pos + 20, 120, 200, 20), 1)
+    pygame.draw.rect(screen, BLUE, (x_pos + 20, 120, int(200 * music_volume), 20))
+    screen.blit(small_font.render(f"{int(music_volume * 100)}%", True, BLACK), (x_pos + 230, 120))
+
+    # Звуки
+    sound_text = small_font.render("Звуки:", True, BLACK)
+    screen.blit(sound_text, (x_pos + 20, 160))
+    pygame.draw.rect(screen, BLACK, (x_pos + 20, 180, 200, 20), 1)
+    pygame.draw.rect(screen, RED, (x_pos + 20, 180, int(200 * sound_volume), 20))
+    screen.blit(small_font.render(f"{int(sound_volume * 100)}%", True, BLACK), (x_pos + 230, 180))
+
+    # Кнопка закрытия
+    pygame.draw.rect(screen, RED, (x_pos + settings_menu_width - 40, 60, 30, 30))
+    screen.blit(font.render("X", True, WHITE), (x_pos + settings_menu_width - 32, 60))
+
+
+def draw_upgrades_menu(x_pos):
+    pygame.draw.rect(screen, LIGHT_PURPLE, (x_pos, 0, upgrades_menu_width, HEIGHT))
+    pygame.draw.rect(screen, PURPLE, (x_pos, 0, upgrades_menu_width, HEIGHT), 5)
+
+    title = font.render("Улучшения", True, PURPLE)
+    screen.blit(title, (x_pos + 100, 30))
+
+    for i, upgrade in enumerate(upgrades):
+        btn_y = 100 + i * 90
+        color = GREEN if score >= upgrade["cost"] else DARK_GRAY
+        pygame.draw.rect(screen, color, (x_pos + 25, btn_y, upgrades_menu_width - 50, 80))
+        pygame.draw.rect(screen, BLACK, (x_pos + 25, btn_y, upgrades_menu_width - 50, 80), 2)
+
+        name = small_font.render(upgrade["name"], True, BLACK)
+        cost = small_font.render(f"Цена: {upgrade['cost']}", True, BLACK)
+        screen.blit(name, (x_pos + 40, btn_y + 25))
+        screen.blit(cost, (x_pos + 40, btn_y + 50))
+
+    # Кнопка закрытия
+    pygame.draw.rect(screen, RED, (x_pos + upgrades_menu_width - 40, 30, 30, 30))
+    screen.blit(font.render("X", True, WHITE), (x_pos + upgrades_menu_width - 32, 30))
+
+
+def draw_achievements_menu(x_pos):
+    global achievement_scroll_offset
+    pygame.draw.rect(screen, ORANGE, (x_pos, 0, upgrades_menu_width, HEIGHT))
+    pygame.draw.rect(screen, DARK_GRAY, (x_pos, 0, upgrades_menu_width, HEIGHT), 5)
+
+    title = font.render("Достижения", True, BLACK)
+    screen.blit(title, (x_pos + 100, 30))
+
+    for i, achievement in enumerate(achievements):
+        btn_y = 100 + i * 90 - achievement_scroll_offset
+        if btn_y + 80 < 0 or btn_y > HEIGHT:
+            continue  # Пропускаем невидимые достижения
+        color = GREEN if achievement["unlocked"] else DARK_GRAY
+        pygame.draw.rect(screen, color, (x_pos + 25, btn_y, upgrades_menu_width - 50, 80))
+        pygame.draw.rect(screen, BLACK, (x_pos + 25, btn_y, upgrades_menu_width - 50, 80), 2)
+
+        name = small_font.render(achievement["name"], True, BLACK)
+        description = small_font.render(achievement["description"], True, BLACK)
+        screen.blit(name, (x_pos + 40, btn_y + 10))
+        screen.blit(description, (x_pos + 40, btn_y + 40))
+
+    # Кнопка закрытия
+    pygame.draw.rect(screen, RED, (x_pos + upgrades_menu_width - 40, 30, 30, 30))
+    screen.blit(font.render("X", True, WHITE), (x_pos + upgrades_menu_width - 32, 30))
+
+
+def draw_notifications():
+    current_time = pygame.time.get_ticks()
+    for notification in notifications[:]:
+        text, start_time = notification
+        if current_time - start_time < notification_duration:
+            pygame.draw.rect(screen, YELLOW, (WIDTH - 220, notifications.index(notification) * 60, 200, 50))
+            pygame.draw.rect(screen, BLACK, (WIDTH - 220, notifications.index(notification) * 60, 200, 50), 2)
+            screen.blit(small_font.render(text, True, BLACK), (WIDTH - 210, notifications.index(notification) * 60 + 10))
+        else:
+            notifications.remove(notification)
+
+
+running = True
+clock = pygame.time.Clock()
+gear_rotation = 0
+last_auto_click_time = 0
+total_time_played = 0
+total_upgrades_bought = 0
+
+while running:
+    current_time = pygame.time.get_ticks()
+    delta_time = clock.tick(60) / 1000  # Время между кадрами в секундах
+    total_time_played += delta_time
+
+    screen.fill(WHITE)
+
+    # Автокликер
+    if auto_click > 0 and current_time - last_auto_click_time > 1000 / auto_click:
+        score += click_power
+        last_auto_click_time = current_time
+
+    # Проверка достижений
+    for achievement in achievements:
+        if not achievement["unlocked"]:
+            if achievement["name"] == "Первое улучшение":
+                if total_upgrades_bought >= achievement["goal"]:
+                    achievement["unlocked"] = True
+                    notifications.append((f"{achievement['name']}", current_time))
+                    achievement_sound.play()
+            elif achievement["name"] == "Автоматизация":
+                if auto_click >= achievement["goal"]:
+                    achievement["unlocked"] = True
+                    notifications.append((f"{achievement['name']}", current_time))
+                    achievement_sound.play()
+            elif achievement["name"] == "Марафон":
+                if total_time_played >= achievement["goal"]:
+                    achievement["unlocked"] = True
+                    notifications.append((f"{achievement['name']}", current_time))
+                    achievement_sound.play()
+            elif achievement["name"] == "Покупатель":
+                if total_upgrades_bought >= achievement["goal"]:
+                    achievement["unlocked"] = True
+                    notifications.append((f"{achievement['name']}", current_time))
+                    achievement_sound.play()
+            elif score >= achievement["goal"]:
+                achievement["unlocked"] = True
+                notifications.append((f"{achievement['name']}", current_time))
+                achievement_sound.play()
+
+    # Анимация меню
+    if upgrades_open:
+        upgrades_menu_x = max(WIDTH - upgrades_menu_width, upgrades_menu_x - menu_speed)
+    else:
+        upgrades_menu_x = min(WIDTH, upgrades_menu_x + menu_speed)
+
+    if settings_open:
+        settings_menu_x = min(0, settings_menu_x + menu_speed)
+    else:
+        settings_menu_x = max(-settings_menu_width, settings_menu_x - menu_speed)
+
+    if achievements_open:
+        achievements_menu_x = max(WIDTH - upgrades_menu_width, achievements_menu_x - menu_speed)
+    else:
+        achievements_menu_x = min(WIDTH, achievements_menu_x + menu_speed)
+
+    # Центрирование игровых элементов
+    game_area_width = WIDTH - (WIDTH - upgrades_menu_x) - max(0, settings_menu_x + settings_menu_width)
+    center_x = max(0, settings_menu_x + settings_menu_width) + game_area_width // 2
+
+    # Обработка событий
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            mouse_pos = pygame.mouse.get_pos()
+
+            # Основная кнопка
+            if (center_x - 100 <= mouse_pos[0] <= center_x + 100 and
+                    HEIGHT // 2 - 100 <= mouse_pos[1] <= HEIGHT // 2 + 100):
+                score += click_power
+                click_sound.play()
+                click_count += 1
+
+            # Кнопка улучшений
+            elif (center_x - 100 <= mouse_pos[0] <= center_x + 100 and
+                  HEIGHT // 2 + 120 <= mouse_pos[1] <= HEIGHT // 2 + 180):
+                upgrades_open = not upgrades_open
+
+            # Кнопка достижений
+            elif (center_x - 100 <= mouse_pos[0] <= center_x + 100 and
+                  HEIGHT // 2 + 200 <= mouse_pos[1] <= HEIGHT // 2 + 260):
+                achievements_open = not achievements_open
+
+            # Шестеренка настроек
+            elif (10 <= mouse_pos[0] <= 50 and
+                  10 <= mouse_pos[1] <= 50):
+                settings_open = not settings_open
+
+            # Обработка меню улучшений
+            elif upgrades_open and mouse_pos[0] >= upgrades_menu_x:
+                # Кнопка закрытия
+                if (upgrades_menu_x + upgrades_menu_width - 40 <= mouse_pos[
+                    0] <= upgrades_menu_x + upgrades_menu_width - 10 and
+                        30 <= mouse_pos[1] <= 60):
+                    upgrades_open = False
+
+                # Улучшения
+                for i, upgrade in enumerate(upgrades):
+                    btn_y = 100 + i * 90
+                    if (upgrades_menu_x + 25 <= mouse_pos[0] <= upgrades_menu_x + upgrades_menu_width - 25 and
+                            btn_y <= mouse_pos[1] <= btn_y + 80):
+                        if score >= upgrade["cost"]:
+                            score -= upgrade["cost"]
+                            if "auto" in upgrade:
+                                auto_click += upgrade["auto"]
+                            else:
+                                click_power += upgrade["power"]
+                            upgrade["cost"] = int(upgrade["cost"] * 1.5)
+                            upgrade_sound.play()
+                            total_upgrades_bought += 1  # Увеличиваем счетчик купленных улучшений
+
+            # Обработка меню настроек
+            elif settings_open and mouse_pos[0] <= settings_menu_x + settings_menu_width:
+                # Кнопка закрытия
+                if (settings_menu_x + settings_menu_width - 40 <= mouse_pos[
+                    0] <= settings_menu_x + settings_menu_width - 10 and
+                        60 <= mouse_pos[1] <= 90):
+                    settings_open = False
+
+                # Громкость музыки
+                elif (settings_menu_x + 20 <= mouse_pos[0] <= settings_menu_x + 220 and
+                      120 <= mouse_pos[1] <= 140):
+                    music_volume = (mouse_pos[0] - (settings_menu_x + 20)) / 200
+                    pygame.mixer.music.set_volume(music_volume)
+
+                # Громкость звуков
+                elif (settings_menu_x + 20 <= mouse_pos[0] <= settings_menu_x + 220 and
+                      180 <= mouse_pos[1] <= 200):
+                    sound_volume = (mouse_pos[0] - (settings_menu_x + 20)) / 200
+                    click_sound.set_volume(sound_volume)
+                    upgrade_sound.set_volume(sound_volume)
+                    achievement_sound.set_volume(sound_volume)
+
+            # Обработка меню достижений
+            elif achievements_open and mouse_pos[0] >= achievements_menu_x:
+                # Кнопка закрытия
+                if (achievements_menu_x + upgrades_menu_width - 40 <= mouse_pos[
+                    0] <= achievements_menu_x + upgrades_menu_width - 10 and
+                        30 <= mouse_pos[1] <= 60):
+                    achievements_open = False
+
+        elif event.type == pygame.MOUSEWHEEL and achievements_open:
+            achievement_scroll_offset = max(0, min(max_scroll_offset, achievement_scroll_offset - event.y * 30))
+
+    # Рассчитываем CPS
+    if current_time - last_click_time > 1000:
+        cps = click_count
+        click_count = 0
+        last_click_time = current_time
+
+    # Отрисовка игровых элементов
+    # Основная кнопка
+    pygame.draw.rect(screen, GREEN, (center_x - 100, HEIGHT // 2 - 100, 200, 200))
+    screen.blit(font.render("КЛИКАЙ!", True, WHITE), (center_x - 60, HEIGHT // 2 - 20))
+
+    # Кнопка улучшений
+    pygame.draw.rect(screen, PURPLE, (center_x - 100, HEIGHT // 2 + 120, 200, 60))
+    screen.blit(font.render("Улучшения", True, WHITE), (center_x - 70, HEIGHT // 2 + 135))
+
+    # Кнопка достижений
+    pygame.draw.rect(screen, ORANGE, (center_x - 100, HEIGHT // 2 + 200, 200, 60))
+    screen.blit(font.render("Достижения", True, WHITE), (center_x - 80, HEIGHT // 2 + 215))
+
+    # Статистика
+    screen.blit(font.render(f"Очки: {score}", True, BLUE), (20, 20))
+    screen.blit(font.render(f"Сила: {click_power}", True, BLUE), (20, 60))
+    if auto_click > 0:
+        screen.blit(font.render(f"Авто: {auto_click}/сек", True, BLUE), (20, 100))
+    screen.blit(font.render(f"CPS: {cps}", True, BLUE), (20, 140))
+
+    # Кнопка настроек (шестеренка)
+    draw_gear(screen, 30, 30, 20, DARK_GRAY, gear_rotation)
+    gear_rotation = (gear_rotation + 1) % 360
+
+    # Меню (рисуются поверх всего)
+    if upgrades_menu_x < WIDTH:
+        draw_upgrades_menu(upgrades_menu_x)
+
+    if settings_menu_x > -settings_menu_width:
+        draw_settings_menu(settings_menu_x)
+
+    if achievements_menu_x < WIDTH:
+        draw_achievements_menu(achievements_menu_x)
+
+    # Отображение уведомлений
+    draw_notifications()
+
+    pygame.display.flip()
+
+pygame.quit()
+sys.exit()
