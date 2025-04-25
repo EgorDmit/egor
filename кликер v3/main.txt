@@ -1,0 +1,403 @@
+import pygame
+import os
+import sys
+import math
+import random
+from time import time
+from pygame.locals import *
+
+# Инициализация Pygame
+pygame.init()
+pygame.mixer.init()
+
+# Настройки экрана
+WIDTH, HEIGHT = 800, 600
+FPS = 60
+
+# Цвета
+WHITE = (255, 255, 255)
+BLACK = (0, 0, 0)
+GREEN = (0, 255, 0)
+RED = (255, 0, 0)
+BLUE = (0, 0, 255)
+GRAY = (200, 200, 200)
+DARK_GRAY = (100, 100, 100)
+PURPLE = (128, 0, 128)
+LIGHT_PURPLE = (200, 150, 200)
+ORANGE = (255, 165, 0)
+YELLOW = (255, 255, 0)
+CYAN = (0, 255, 255)
+
+# Шрифты
+font = pygame.font.Font(None, 36)
+small_font = pygame.font.Font(None, 24)
+
+# Параметры игры
+MENU_SPEED = 25
+UPGRADES_MENU_WIDTH = 350
+NOTIFICATION_DURATION = 3000
+MAX_SHOP_ITEMS = 5
+SCROLL_SPEED = 20
+COMBO_RESET_TIME = 2
+
+
+class Audio:
+    def __init__(self):
+        self.music_volume = 0.5
+        self.sounds_loaded = False
+
+        # Получаем путь к папке со скриптом
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        sounds_dir = os.path.join(script_dir, 'sounds')
+
+        # Создаем папку sounds, если ее нет
+        if not os.path.exists(sounds_dir):
+            os.makedirs(sounds_dir)
+            print(f"Создана папка для звуков: {sounds_dir}")
+            print("Пожалуйста, добавьте в нее звуковые файлы:")
+            print("- click.wav, upgrade.wav, achievement.wav, background.mp3")
+
+        # Загружаем звуки с обработкой ошибок
+        try:
+            self.click_sound = pygame.mixer.Sound(os.path.join(sounds_dir, 'click.wav'))
+            self.upgrade_sound = pygame.mixer.Sound(os.path.join(sounds_dir, 'upgrade.wav'))
+            self.achievement_sound = pygame.mixer.Sound(os.path.join(sounds_dir, 'achievement.wav'))
+            pygame.mixer.music.load(os.path.join(sounds_dir, 'background.mp3'))
+            self.sounds_loaded = True
+        except Exception as e:
+            print(f"Ошибка загрузки звуков: {e}")
+            print("Игра будет работать без звуков")
+            self.sounds_loaded = False
+
+    def play_click(self):
+        if self.sounds_loaded:
+            self.click_sound.play()
+
+    def play_upgrade(self):
+        if self.sounds_loaded:
+            self.upgrade_sound.play()
+
+    def play_achievement(self):
+        if self.sounds_loaded:
+            self.achievement_sound.play()
+
+    def start_music(self):
+        if self.sounds_loaded:
+            pygame.mixer.music.set_volume(self.music_volume)
+            pygame.mixer.music.play(loops=-1)
+
+    def set_music_volume(self, volume):
+        self.music_volume = max(0, min(1, volume))
+        if self.sounds_loaded:
+            pygame.mixer.music.set_volume(self.music_volume)
+
+
+class Shop:
+    def __init__(self, audio):
+        self.audio = audio
+        self.upgrades = [
+            {"name": "+1 за клик", "cost": 10, "power": 1},
+            {"name": "+5 за клик", "cost": 50, "power": 5},
+            {"name": "Авто-кликер (1/сек)", "cost": 200, "auto": 1},
+            {"name": "Мега клик (+10)", "cost": 500, "power": 10},
+            {"name": "Супер авто-кликер (5/сек)", "cost": 1000, "auto": 5},
+            {"name": "Ультра клик (+25)", "cost": 2500, "power": 25},
+            {"name": "Гига автокликер (10/сек)", "cost": 5000, "auto": 10}
+        ]
+        self.menu_x = WIDTH
+        self.is_open = False
+        self.scroll_offset = 0
+        self.max_scroll = 0
+
+    def update_scroll(self):
+        total_height = len(self.upgrades) * 80
+        self.max_scroll = max(0, total_height - (HEIGHT - 120))
+
+    def handle_event(self, event):
+        if event.type == pygame.MOUSEWHEEL:
+            self.scroll_offset = max(0, min(
+                self.max_scroll,
+                self.scroll_offset - event.y * SCROLL_SPEED
+            ))
+
+    def draw(self, screen, coins):
+        self.update_scroll()
+
+        pygame.draw.rect(screen, LIGHT_PURPLE, (self.menu_x, 0, UPGRADES_MENU_WIDTH, HEIGHT))
+        pygame.draw.rect(screen, PURPLE, (self.menu_x, 0, UPGRADES_MENU_WIDTH, HEIGHT), 5)
+
+        title = font.render("Магазин", True, PURPLE)
+        coins_text = font.render(f"Монеты: {coins}", True, BLUE)
+        screen.blit(title, (self.menu_x + 120, 30))
+        screen.blit(coins_text, (self.menu_x + 20, 70))
+
+        start_idx = max(0, self.scroll_offset // 80 - 1)
+        end_idx = min(len(self.upgrades), start_idx + MAX_SHOP_ITEMS + 2)
+
+        for i in range(start_idx, end_idx):
+            upgrade = self.upgrades[i]
+            btn_y = 120 + i * 80 - self.scroll_offset
+            if 120 <= btn_y <= HEIGHT - 50:
+                color = GREEN if coins >= upgrade["cost"] else DARK_GRAY
+                rect = pygame.Rect(self.menu_x + 25, btn_y, UPGRADES_MENU_WIDTH - 50, 70)
+
+                pygame.draw.rect(screen, color, rect)
+                pygame.draw.rect(screen, BLACK, rect, 2)
+
+                name = small_font.render(upgrade["name"], True, BLACK)
+                cost = small_font.render(f"Цена: {upgrade['cost']}", True, BLACK)
+                screen.blit(name, (self.menu_x + 40, btn_y + 15))
+                screen.blit(cost, (self.menu_x + 40, btn_y + 40))
+
+        if len(self.upgrades) > MAX_SHOP_ITEMS:
+            scroll_height = (HEIGHT - 120) * ((HEIGHT - 120) / (len(self.upgrades) * 80))
+            scroll_pos = (self.scroll_offset / self.max_scroll) * (
+                        HEIGHT - 120 - scroll_height) if self.max_scroll > 0 else 0
+            pygame.draw.rect(screen, DARK_GRAY,
+                             (self.menu_x + UPGRADES_MENU_WIDTH - 20, 120 + scroll_pos, 10, scroll_height))
+
+
+class Achievements:
+    def __init__(self, audio):
+        self.audio = audio
+        self.list = [
+            {"name": "Новичок", "description": "10 монет", "goal": 10, "unlocked": False},
+            {"name": "Опытный", "description": "100 монет", "goal": 100, "unlocked": False},
+            {"name": "Профи", "description": "1,000 монет", "goal": 1000, "unlocked": False},
+            {"name": "Первое улучшение", "description": "Купите улучшение", "goal": 1, "unlocked": False},
+            {"name": "Автоматизация", "description": "Купите автокликер", "goal": 1, "unlocked": False}
+        ]
+        self.menu_x = WIDTH
+        self.is_open = False
+        self.scroll_offset = 0
+        self.max_scroll = max(0, len(self.list) * 90 - HEIGHT + 100)
+
+    def check(self, coins, upgrades_bought, auto_clicker):
+        new_achievements = []
+        for ach in self.list:
+            if not ach["unlocked"]:
+                if ach["name"] in ["Новичок", "Опытный", "Профи"] and coins >= ach["goal"]:
+                    ach["unlocked"] = True
+                    new_achievements.append(ach)
+                    self.audio.play_achievement()
+                elif ach["name"] == "Первое улучшение" and upgrades_bought >= ach["goal"]:
+                    ach["unlocked"] = True
+                    new_achievements.append(ach)
+                    self.audio.play_achievement()
+                elif ach["name"] == "Автоматизация" and auto_clicker >= ach["goal"]:
+                    ach["unlocked"] = True
+                    new_achievements.append(ach)
+                    self.audio.play_achievement()
+        return new_achievements
+
+    def draw(self, screen):
+        pygame.draw.rect(screen, ORANGE, (self.menu_x, 0, UPGRADES_MENU_WIDTH, HEIGHT))
+        pygame.draw.rect(screen, DARK_GRAY, (self.menu_x, 0, UPGRADES_MENU_WIDTH, HEIGHT), 5)
+
+        title = font.render("Достижения", True, BLACK)
+        screen.blit(title, (self.menu_x + 100, 30))
+
+        start_idx = max(0, self.scroll_offset // 90 - 1)
+        end_idx = min(len(self.list), start_idx + MAX_SHOP_ITEMS + 2)
+
+        for i in range(start_idx, end_idx):
+            ach = self.list[i]
+            btn_y = 100 + i * 90 - self.scroll_offset
+            if 100 <= btn_y <= HEIGHT - 50:
+                color = GREEN if ach["unlocked"] else DARK_GRAY
+                rect = pygame.Rect(self.menu_x + 25, btn_y, UPGRADES_MENU_WIDTH - 50, 80)
+
+                pygame.draw.rect(screen, color, rect)
+                pygame.draw.rect(screen, BLACK, rect, 2)
+
+                name = small_font.render(ach["name"], True, BLACK)
+                desc = small_font.render(ach["description"], True, BLACK)
+                screen.blit(name, (self.menu_x + 40, btn_y + 10))
+                screen.blit(desc, (self.menu_x + 40, btn_y + 40))
+
+        if self.max_scroll > 0:
+            scroll_height = HEIGHT * (HEIGHT / (self.max_scroll + HEIGHT))
+            scroll_pos = (self.scroll_offset / self.max_scroll) * (HEIGHT - scroll_height) if self.max_scroll > 0 else 0
+            pygame.draw.rect(screen, DARK_GRAY,
+                             (self.menu_x + UPGRADES_MENU_WIDTH - 20, scroll_pos, 10, scroll_height))
+
+
+def draw_gear(surface, x, y, size, color, rotation=0):
+    points = []
+    for i in range(12):
+        angle = math.radians(rotation + i * 30)
+        radius = size if i % 2 == 0 else size * 0.6
+        points.append((x + radius * math.cos(angle), y + radius * math.sin(angle)))
+    pygame.draw.polygon(surface, color, points)
+    pygame.draw.circle(surface, color, (x, y), size * 0.4)
+
+
+class Game:
+    def __init__(self):
+        self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
+        pygame.display.set_caption("Кликер с музыкой и звуками")
+        self.clock = pygame.time.Clock()
+        self.audio = Audio()
+        self.shop = Shop(self.audio)
+        self.achievements = Achievements(self.audio)
+        self.reset_game_state()
+        self.audio.start_music()
+
+    def reset_game_state(self):
+        self.coins = 0
+        self.click_power = 1
+        self.auto_click = 0
+        self.combo = 0
+        self.combo_multiplier = 1
+        self.last_click_time = 0
+        self.last_auto_click_time = 0
+        self.total_upgrades_bought = 0
+        self.notifications = []
+        self.click_count = 0
+
+    def handle_events(self):
+        mouse_pos = pygame.mouse.get_pos()
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return False
+
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                self.handle_click(event, mouse_pos)
+
+            if event.type == pygame.MOUSEWHEEL:
+                if self.shop.is_open:
+                    self.shop.handle_event(event)
+                elif self.achievements.is_open:
+                    self.achievements.scroll_offset = max(0, min(
+                        self.achievements.max_scroll,
+                        self.achievements.scroll_offset - event.y * SCROLL_SPEED
+                    ))
+
+        return True
+
+    def handle_click(self, event, mouse_pos):
+        if (WIDTH // 2 - 100 <= mouse_pos[0] <= WIDTH // 2 + 100 and
+                HEIGHT // 2 - 100 <= mouse_pos[1] <= HEIGHT // 2 + 100):
+            self.audio.play_click()
+            self.process_main_click()
+
+        elif (WIDTH // 2 - 100 <= mouse_pos[0] <= WIDTH // 2 + 100 and
+              HEIGHT // 2 + 120 <= mouse_pos[1] <= HEIGHT // 2 + 180):
+            self.shop.is_open = not self.shop.is_open
+            self.achievements.is_open = False
+
+        elif (WIDTH // 2 - 100 <= mouse_pos[0] <= WIDTH // 2 + 100 and
+              HEIGHT // 2 + 200 <= mouse_pos[1] <= HEIGHT // 2 + 260):
+            self.achievements.is_open = not self.achievements.is_open
+            self.shop.is_open = False
+
+        if self.shop.is_open and event.button == 1:
+            self.process_shop_click(mouse_pos)
+
+    def process_main_click(self):
+        now = time()
+        if now - self.last_click_time < COMBO_RESET_TIME:
+            self.combo += 1
+            self.combo_multiplier = min(1 + self.combo // 10, 5)
+        else:
+            self.combo = 1
+            self.combo_multiplier = 1
+
+        self.last_click_time = now
+        self.click_count += 1
+        self.coins += self.click_power * self.combo_multiplier
+
+        if random.random() < 0.1:
+            self.coins += 1
+            self.audio.play_click()
+
+    def process_shop_click(self, mouse_pos):
+        for i, upgrade in enumerate(self.shop.upgrades):
+            btn_y = 120 + i * 80 - self.shop.scroll_offset
+            if (self.shop.menu_x + 25 <= mouse_pos[0] <= self.shop.menu_x + UPGRADES_MENU_WIDTH - 25 and
+                    120 <= btn_y <= HEIGHT - 50 and
+                    btn_y <= mouse_pos[1] <= btn_y + 70):
+                if self.coins >= upgrade["cost"]:
+                    self.coins -= upgrade["cost"]
+                    if "auto" in upgrade:
+                        self.auto_click += upgrade["auto"]
+                    else:
+                        self.click_power += upgrade["power"]
+                    upgrade["cost"] = int(upgrade["cost"] * 1.5)
+                    self.total_upgrades_bought += 1
+                    self.audio.play_upgrade()
+
+    def update(self):
+        current_time = pygame.time.get_ticks()
+
+        if self.auto_click > 0 and current_time - self.last_auto_click_time > 1000 / self.auto_click:
+            self.coins += self.click_power
+            self.last_auto_click_time = current_time
+
+        new_achievements = self.achievements.check(
+            coins=self.coins,
+            upgrades_bought=self.total_upgrades_bought,
+            auto_clicker=1 if self.auto_click > 0 else 0
+        )
+
+        for ach in new_achievements:
+            self.notifications.append((f"Достижение: {ach['name']}", current_time))
+
+        self.shop.menu_x = max(WIDTH - UPGRADES_MENU_WIDTH,
+                               self.shop.menu_x - MENU_SPEED) if self.shop.is_open else min(WIDTH,
+                                                                                            self.shop.menu_x + MENU_SPEED)
+        self.achievements.menu_x = max(WIDTH - UPGRADES_MENU_WIDTH,
+                                       self.achievements.menu_x - MENU_SPEED) if self.achievements.is_open else min(
+            WIDTH, self.achievements.menu_x + MENU_SPEED)
+
+        self.notifications = [(text, t) for text, t in self.notifications if current_time - t < NOTIFICATION_DURATION]
+
+    def draw(self):
+        self.screen.fill(WHITE)
+
+        pygame.draw.rect(self.screen, GREEN, (WIDTH // 2 - 100, HEIGHT // 2 - 100, 200, 200))
+        self.screen.blit(font.render("КЛИКАЙ!", True, WHITE), (WIDTH // 2 - 60, HEIGHT // 2 - 20))
+
+        pygame.draw.rect(self.screen, PURPLE, (WIDTH // 2 - 100, HEIGHT // 2 + 120, 200, 60))
+        self.screen.blit(font.render("Магазин", True, WHITE), (WIDTH // 2 - 70, HEIGHT // 2 + 135))
+
+        pygame.draw.rect(self.screen, ORANGE, (WIDTH // 2 - 100, HEIGHT // 2 + 200, 200, 60))
+        self.screen.blit(font.render("Достижения", True, WHITE), (WIDTH // 2 - 80, HEIGHT // 2 + 215))
+
+        self.screen.blit(font.render(f"Монеты: {self.coins}", True, BLUE), (20, HEIGHT - 140))
+        self.screen.blit(font.render(f"Сила: {self.click_power}", True, BLUE), (20, HEIGHT - 100))
+        if self.auto_click > 0:
+            self.screen.blit(font.render(f"Авто: {self.auto_click}/сек", True, BLUE), (20, HEIGHT - 60))
+        if self.combo_multiplier > 1:
+            self.screen.blit(font.render(f"COMBO x{self.combo_multiplier}!", True, RED),
+                             (WIDTH // 2 - 60, HEIGHT // 2 - 150))
+
+        draw_gear(self.screen, 30, 30, 20, DARK_GRAY, pygame.time.get_ticks() / 20 % 360)
+
+        if self.shop.is_open:
+            self.shop.draw(self.screen, self.coins)
+        if self.achievements.is_open:
+            self.achievements.draw(self.screen)
+
+        for i, (text, start_time) in enumerate(self.notifications):
+            pygame.draw.rect(self.screen, YELLOW, (WIDTH - 220, i * 60, 200, 50))
+            pygame.draw.rect(self.screen, BLACK, (WIDTH - 220, i * 60, 200, 50), 2)
+            self.screen.blit(small_font.render(text, True, BLACK), (WIDTH - 210, i * 60 + 10))
+
+        pygame.display.flip()
+
+    def run(self):
+        running = True
+        while running:
+            running = self.handle_events()
+            self.update()
+            self.draw()
+            self.clock.tick(FPS)
+
+
+if __name__ == "__main__":
+    game = Game()
+    game.run()
+    pygame.quit()
+    sys.exit()

@@ -1,0 +1,67 @@
+import pygame
+from settings import *
+
+
+class Achievements:
+    def __init__(self, audio):
+        self.audio = audio
+        self.list = [
+            {"name": "Новичок", "description": "10 монет", "goal": 10, "unlocked": False},
+            {"name": "Опытный", "description": "100 монет", "goal": 100, "unlocked": False},
+            {"name": "Профи", "description": "1,000 монет", "goal": 1000, "unlocked": False},
+            {"name": "Первое улучшение", "description": "Купите улучшение", "goal": 1, "unlocked": False},
+            {"name": "Автоматизация", "description": "Купите автокликер", "goal": 1, "unlocked": False}
+        ]
+        self.menu_x = WIDTH
+        self.is_open = False
+        self.scroll_offset = 0
+        self.max_scroll = max(0, len(self.list) * 90 - HEIGHT + 100)
+
+    def check(self, coins, upgrades_bought, auto_clicker):
+        new_achievements = []
+        for ach in self.list:
+            if not ach["unlocked"]:
+                if ach["name"] in ["Новичок", "Опытный", "Профи"] and coins >= ach["goal"]:
+                    ach["unlocked"] = True
+                    new_achievements.append(ach)
+                    self.audio.play_achievement()
+                elif ach["name"] == "Первое улучшение" and upgrades_bought >= ach["goal"]:
+                    ach["unlocked"] = True
+                    new_achievements.append(ach)
+                    self.audio.play_achievement()
+                elif ach["name"] == "Автоматизация" and auto_clicker >= ach["goal"]:
+                    ach["unlocked"] = True
+                    new_achievements.append(ach)
+                    self.audio.play_achievement()
+        return new_achievements
+
+    def draw(self, screen):
+        pygame.draw.rect(screen, ORANGE, (self.menu_x, 0, UPGRADES_MENU_WIDTH, HEIGHT))
+        pygame.draw.rect(screen, DARK_GRAY, (self.menu_x, 0, UPGRADES_MENU_WIDTH, HEIGHT), 5)
+
+        title = font.render("Достижения", True, BLACK)
+        screen.blit(title, (self.menu_x + 100, 30))
+
+        start_idx = max(0, self.scroll_offset // 90 - 1)
+        end_idx = min(len(self.list), start_idx + MAX_SHOP_ITEMS + 2)
+
+        for i in range(start_idx, end_idx):
+            ach = self.list[i]
+            btn_y = 100 + i * 90 - self.scroll_offset
+            if 100 <= btn_y <= HEIGHT - 50:
+                color = GREEN if ach["unlocked"] else DARK_GRAY
+                rect = pygame.Rect(self.menu_x + 25, btn_y, UPGRADES_MENU_WIDTH - 50, 80)
+
+                pygame.draw.rect(screen, color, rect)
+                pygame.draw.rect(screen, BLACK, rect, 2)
+
+                name = small_font.render(ach["name"], True, BLACK)
+                desc = small_font.render(ach["description"], True, BLACK)
+                screen.blit(name, (self.menu_x + 40, btn_y + 10))
+                screen.blit(desc, (self.menu_x + 40, btn_y + 40))
+
+        if self.max_scroll > 0:
+            scroll_height = HEIGHT * (HEIGHT / (self.max_scroll + HEIGHT))
+            scroll_pos = (self.scroll_offset / self.max_scroll) * (HEIGHT - scroll_height) if self.max_scroll > 0 else 0
+            pygame.draw.rect(screen, DARK_GRAY,
+                             (self.menu_x + UPGRADES_MENU_WIDTH - 20, scroll_pos, 10, scroll_height))

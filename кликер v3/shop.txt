@@ -1,0 +1,67 @@
+import pygame
+from settings import *
+
+
+class Shop:
+    def __init__(self, audio):
+        self.audio = audio
+        self.upgrades = [
+            {"name": "+1 за клик", "cost": 10, "power": 1},
+            {"name": "+5 за клик", "cost": 50, "power": 5},
+            {"name": "Авто-кликер (1/сек)", "cost": 200, "auto": 1},
+            {"name": "Мега клик (+10)", "cost": 500, "power": 10},
+            {"name": "Супер авто-кликер (5/сек)", "cost": 1000, "auto": 5},
+            {"name": "Ультра клик (+25)", "cost": 2500, "power": 25},
+            {"name": "Гига автокликер (10/сек)", "cost": 5000, "auto": 10}
+        ]
+        self.menu_x = WIDTH
+        self.is_open = False
+        self.scroll_offset = 0
+        self.max_scroll = 0
+
+    def update_scroll(self):
+        total_height = len(self.upgrades) * 80
+        self.max_scroll = max(0, total_height - (HEIGHT - 120))
+
+    def handle_event(self, event):
+        if event.type == pygame.MOUSEWHEEL:
+            self.scroll_offset = max(0, min(
+                self.max_scroll,
+                self.scroll_offset - event.y * SCROLL_SPEED
+            ))
+
+    def draw(self, screen, coins):
+        self.update_scroll()
+
+        pygame.draw.rect(screen, LIGHT_PURPLE, (self.menu_x, 0, UPGRADES_MENU_WIDTH, HEIGHT))
+        pygame.draw.rect(screen, PURPLE, (self.menu_x, 0, UPGRADES_MENU_WIDTH, HEIGHT), 5)
+
+        title = font.render("Магазин", True, PURPLE)
+        coins_text = font.render(f"Монеты: {coins}", True, BLUE)
+        screen.blit(title, (self.menu_x + 120, 30))
+        screen.blit(coins_text, (self.menu_x + 20, 70))
+
+        start_idx = max(0, self.scroll_offset // 80 - 1)
+        end_idx = min(len(self.upgrades), start_idx + MAX_SHOP_ITEMS + 2)
+
+        for i in range(start_idx, end_idx):
+            upgrade = self.upgrades[i]
+            btn_y = 120 + i * 80 - self.scroll_offset
+            if 120 <= btn_y <= HEIGHT - 50:
+                color = GREEN if coins >= upgrade["cost"] else DARK_GRAY
+                rect = pygame.Rect(self.menu_x + 25, btn_y, UPGRADES_MENU_WIDTH - 50, 70)
+
+                pygame.draw.rect(screen, color, rect)
+                pygame.draw.rect(screen, BLACK, rect, 2)
+
+                name = small_font.render(upgrade["name"], True, BLACK)
+                cost = small_font.render(f"Цена: {upgrade['cost']}", True, BLACK)
+                screen.blit(name, (self.menu_x + 40, btn_y + 15))
+                screen.blit(cost, (self.menu_x + 40, btn_y + 40))
+
+        if len(self.upgrades) > MAX_SHOP_ITEMS:
+            scroll_height = (HEIGHT - 120) * ((HEIGHT - 120) / (len(self.upgrades) * 80))
+            scroll_pos = (self.scroll_offset / self.max_scroll) * (
+                        HEIGHT - 120 - scroll_height) if self.max_scroll > 0 else 0
+            pygame.draw.rect(screen, DARK_GRAY,
+                             (self.menu_x + UPGRADES_MENU_WIDTH - 20, 120 + scroll_pos, 10, scroll_height))
